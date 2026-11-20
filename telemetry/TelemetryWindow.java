@@ -1,5 +1,6 @@
 import java.math.BigDecimal;
 import java.util.ArrayDeque;
+import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,8 +32,17 @@ public class TelemetryWindow {
 
     } 
 
+    public enum TelemetryId {
+        LOX_P,
+        LOX_T,
+        CH4_P,
+        CH4_T
+    }
 
-    private ArrayDeque<TelemetryRecord> telemetryRecords = new ArrayDeque<>();
+
+    private HashMap<String, ArrayDeque<TelemetryRecord>> telemetryMap = new HashMap<>();
+    private int windowSize = 5000; // 5 seconds
+    private long mostRecentTimestamp = 0;
 
     /**
      * Ingests a telemetry record into the telemetry window.
@@ -40,8 +50,15 @@ public class TelemetryWindow {
      * @param telemetryId
      * @param telemetryValue
      */
-    public void ingest(long telemetryTimeStamp_ms, String telemetryId, float telemetryValue) {
-        telemetryRecords.add(new TelemetryRecord(telemetryTimeStamp_ms, telemetryId, telemetryValue));
+    public void ingest(long telemetryTimeStamp_ms, TelemetryId telemetryId, float telemetryValue) {
+        mostRecentTimestamp = telemetryTimeStamp_ms;
+        telemetryMap.computeIfAbsent(telemetryId.name(), k -> new ArrayDeque<>()).add(new TelemetryRecord(telemetryTimeStamp_ms, telemetryId.name(), telemetryValue));
+
+        // Remove records that are outside the 5-second window
+        ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId.name());
+        while (!sensorRecords.isEmpty() && sensorRecords.peek().getTelemetryTimeStamp_ms() < mostRecentTimestamp - windowSize) {
+            sensorRecords.poll();
+        }
     }
 
     /**
@@ -50,30 +67,27 @@ public class TelemetryWindow {
      * @param telemetryId The telemetry ID to query.
      * @return String representing the min, max, and mean values.
      */
-    public String query(String telemetryId) {
+    public String query(TelemetryId telemetryId) {
+        return query(telemetryId.name());
+    }
 
-        AtomicReference<BigDecimal> min = new AtomicReference<>(new BigDecimal(Float.MAX_VALUE));
-        AtomicReference<BigDecimal> max = new AtomicReference<>(new BigDecimal(Float.MIN_VALUE));
-        AtomicLong sum = new AtomicLong(0);
-        AtomicInteger count = new AtomicInteger(0);    
+    private String query(String telemetryId) {
 
-        long mostRecentTimestamp = telemetryRecords.stream()
-                .mapToLong(TelemetryRecord::getTelemetryTimeStamp_ms)
-                .max()
-                .orElse(0);
+        ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId);
+        
+        if (sensorRecords == null) {
+            return "None";
+        }
 
-        telemetryRecords.stream()
-                .filter(record -> record.getTelemetryId().equals(telemetryId))
-                .filter(record -> record.getTelemetryTimeStamp_ms() >= mostRecentTimestamp - 5000)
-                .limit(5000)
-                .forEach(record -> {
-                    min.set(new BigDecimal(Math.min(min.get().floatValue(), record.getTelemetryValue())));
-                    max.set(new BigDecimal(Math.max(max.get().floatValue(), record.getTelemetryValue())));
-                    sum.getAndAdd((long) record.getTelemetryValue());
-                    count.getAndIncrement();
-                });
+        if (sensorRecords.isEmpty()) {
+            return "None";
+        }
 
-        return String.format("Telemetry ID: %s, Min: %.2f, Max: %.2f, Mean: %.2f", telemetryId, min.get().floatValue(), max.get().floatValue(), count.get() > 0 ? (float) sum.get() / count.get() : 0);
+        final float min = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).min(Float::compare).orElse(Float.NaN);
+        final float max = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).max(Float::compare).orElse(Float.NaN);
+        final float mean = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).reduce(0.0f, Float::sum) / sensorRecords.size();
+
+        return String.format("Min: %.2f, Max: %.2f, Mean: %.2f", min, max, mean);
     }
 
 }
