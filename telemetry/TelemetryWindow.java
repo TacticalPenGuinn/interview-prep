@@ -1,18 +1,14 @@
-import java.math.BigDecimal;
 import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class TelemetryWindow {
     
-    public final class TelemetryRecord {
+    public static class TelemetryRecord {
         private long telemetryTimeStamp_ms;
-        private String telemetryId;
+        private TelemetryId telemetryId;
         private float telemetryValue;
 
-        public TelemetryRecord(long telemetryTimeStamp_ms, String telemetryId, float telemetryValue) {
+        public TelemetryRecord(long telemetryTimeStamp_ms, TelemetryId telemetryId, float telemetryValue) {
             this.telemetryTimeStamp_ms = telemetryTimeStamp_ms;
             this.telemetryId = telemetryId;
             this.telemetryValue = telemetryValue;
@@ -22,7 +18,7 @@ public class TelemetryWindow {
             return telemetryTimeStamp_ms;
         }
 
-        public String getTelemetryId() {
+        public TelemetryId getTelemetryId() {
             return telemetryId;
         }
 
@@ -40,9 +36,24 @@ public class TelemetryWindow {
     }
 
 
-    private HashMap<String, ArrayDeque<TelemetryRecord>> telemetryMap = new HashMap<>();
+    private HashMap<TelemetryId, ArrayDeque<TelemetryRecord>> telemetryMap = new HashMap<>();
     private int windowSize = 5000; // 5 seconds
     private long mostRecentTimestamp = 0;
+
+    /**
+     * Evicts old telemetry records that are outside the specified window.
+     * 
+     * @param telemetryMap The map containing telemetry records.
+     * @param mostRecentTimestamp The most recent timestamp.
+     * @param windowSize The size of the window in milliseconds.
+     * @param telemetryId The ID of the telemetry to evict records for.
+     */
+    private void evictOldRecords(TelemetryId telemetryId) {
+        ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId);
+        while (!sensorRecords.isEmpty() && sensorRecords.peek().getTelemetryTimeStamp_ms() < mostRecentTimestamp - windowSize) {
+            sensorRecords.poll();
+        }
+    }
 
     /**
      * Ingests a telemetry record into the telemetry window.
@@ -52,13 +63,10 @@ public class TelemetryWindow {
      */
     public void ingest(long telemetryTimeStamp_ms, TelemetryId telemetryId, float telemetryValue) {
         mostRecentTimestamp = telemetryTimeStamp_ms;
-        telemetryMap.computeIfAbsent(telemetryId.name(), k -> new ArrayDeque<>()).add(new TelemetryRecord(telemetryTimeStamp_ms, telemetryId.name(), telemetryValue));
+        telemetryMap.computeIfAbsent(telemetryId, k -> new ArrayDeque<>()).add(new TelemetryRecord(telemetryTimeStamp_ms, telemetryId, telemetryValue));
 
         // Remove records that are outside the 5-second window
-        ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId.name());
-        while (!sensorRecords.isEmpty() && sensorRecords.peek().getTelemetryTimeStamp_ms() < mostRecentTimestamp - windowSize) {
-            sensorRecords.poll();
-        }
+        evictOldRecords(telemetryId);
     }
 
     /**
@@ -68,20 +76,19 @@ public class TelemetryWindow {
      * @return String representing the min, max, and mean values.
      */
     public String query(TelemetryId telemetryId) {
-        return query(telemetryId.name());
-    }
-
-    private String query(String telemetryId) {
 
         ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId);
         
         if (sensorRecords == null) {
-            return "None";
+            return null;
         }
 
+        evictOldRecords(telemetryId);
+
         if (sensorRecords.isEmpty()) {
-            return "None";
+            return null;
         }
+
 
         final float min = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).min(Float::compare).orElse(Float.NaN);
         final float max = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).max(Float::compare).orElse(Float.NaN);
