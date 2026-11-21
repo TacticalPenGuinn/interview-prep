@@ -23,7 +23,7 @@ interview-prep/
 
 | Problem | Language | Topics | Status |
 |---|---|---|---|
-| [Telemetry Anomaly Window](spacex/telemetry/SPACEX-Problem.md) | Java | Sliding window, `HashMap` of `ArrayDeque`s, eviction, monotonic deque | Correct per-sensor windowing; O(1) min/max in progress |
+| [Telemetry Anomaly Window](spacex/telemetry/SPACEX-Problem.md) | Java | Sliding window, `HashMap` of `ArrayDeque`s, eviction, monotonic deque | Correct per-sensor windowing with JUnit tests; O(1) min/max in progress |
 
 ### Telemetry Anomaly Window
 
@@ -45,4 +45,4 @@ cd spacex/telemetry/java
 ./gradlew test
 ```
 
-GitHub Actions runs the same tests on every push. The test class is only a placeholder so far; real cases (the problem's example, a sensor that never reported, a sensor that went quiet, all-negative values, and the exact 5,000 ms boundary) are next.
+GitHub Actions runs the same tests on every push. The JUnit suite covers the problem's example, per-sensor windowing with interleaved sensors, a sensor that never reported, a sensor that went quiet while another kept time moving, negative values, and the exact 5,000 ms boundary (a reading exactly 5,000 ms old has aged out).
