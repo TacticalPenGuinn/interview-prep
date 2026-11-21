@@ -50,7 +50,7 @@ public class TelemetryWindow {
      */
     private void evictOldRecords(TelemetryId telemetryId) {
         ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId);
-        while (!sensorRecords.isEmpty() && sensorRecords.peek().getTelemetryTimeStamp_ms() < mostRecentTimestamp - windowSize) {
+        while (!sensorRecords.isEmpty() && sensorRecords.peek().getTelemetryTimeStamp_ms() <= mostRecentTimestamp - windowSize) {
             sensorRecords.poll();
         }
     }

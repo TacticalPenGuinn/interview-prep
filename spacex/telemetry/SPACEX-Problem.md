@@ -6,6 +6,7 @@ A vehicle streams sensor readings as `(timestamp_ms, sensor_id, value)` tuples, 
 
 - `ingest(timestamp_ms, sensor_id, value)` adds a reading.
 - `query(sensor_id)` returns the min, max, and mean of that sensor's readings from the last 5,000 ms, measured back from the most recent timestamp ingested across all sensors.
+  - The window is exclusive at its old edge: with a most recent timestamp of `T`, a reading counts only if its timestamp is greater than `T - 5000`. A reading exactly 5,000 ms old has aged out.
 
 Requirements:
 1. `ingest` should be amortized O(1), and `query` should be O(1) for min and max (a plain scan of the window doesn't count).
