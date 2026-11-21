@@ -26,7 +26,14 @@ public class TelemetryWindow {
             return telemetryValue;
         }
 
-    } 
+    }
+
+    private static class SensorWindow {
+        ArrayDeque<TelemetryRecord> records = new ArrayDeque<>();
+        ArrayDeque<TelemetryRecord> maxDeque = new ArrayDeque<>();
+        ArrayDeque<TelemetryRecord> minDeque = new ArrayDeque<>();
+        double sum = 0.0;
+    }
 
     public enum TelemetryId {
         LOX_P,
@@ -36,22 +43,26 @@ public class TelemetryWindow {
     }
 
 
-    private HashMap<TelemetryId, ArrayDeque<TelemetryRecord>> telemetryMap = new HashMap<>();
+    private HashMap<TelemetryId, SensorWindow> telemetryMap = new HashMap<>();
     private int windowSize = 5000; // 5 seconds
     private long mostRecentTimestamp = 0;
 
     /**
      * Evicts old telemetry records that are outside the specified window.
      * 
-     * @param telemetryMap The map containing telemetry records.
-     * @param mostRecentTimestamp The most recent timestamp.
-     * @param windowSize The size of the window in milliseconds.
      * @param telemetryId The ID of the telemetry to evict records for.
      */
     private void evictOldRecords(TelemetryId telemetryId) {
-        ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId);
-        while (!sensorRecords.isEmpty() && sensorRecords.peek().getTelemetryTimeStamp_ms() <= mostRecentTimestamp - windowSize) {
-            sensorRecords.poll();
+        SensorWindow sensorWindow = telemetryMap.get(telemetryId);
+        if (sensorWindow != null) {
+            ArrayDeque<TelemetryRecord> records = sensorWindow.records;
+            while (!records.isEmpty() && records.peek().getTelemetryTimeStamp_ms() <= mostRecentTimestamp - windowSize) {
+                TelemetryRecord old = records.poll();
+                sensorWindow.sum -= old.getTelemetryValue();
+
+                if (sensorWindow.maxDeque.peekFirst() == old) sensorWindow.maxDeque.pollFirst();
+                if (sensorWindow.minDeque.peekFirst() == old) sensorWindow.minDeque.pollFirst();
+            }
         }
     }
 
@@ -63,7 +74,21 @@ public class TelemetryWindow {
      */
     public void ingest(long telemetryTimeStamp_ms, TelemetryId telemetryId, float telemetryValue) {
         mostRecentTimestamp = telemetryTimeStamp_ms;
-        telemetryMap.computeIfAbsent(telemetryId, k -> new ArrayDeque<>()).add(new TelemetryRecord(telemetryTimeStamp_ms, telemetryId, telemetryValue));
+        SensorWindow sensorWindow = telemetryMap.computeIfAbsent(telemetryId, k -> new SensorWindow());
+        TelemetryRecord record = new TelemetryRecord(telemetryTimeStamp_ms, telemetryId, telemetryValue);
+
+        sensorWindow.records.addLast(record);
+        sensorWindow.sum += telemetryValue;
+
+        while (!sensorWindow.maxDeque.isEmpty() && sensorWindow.maxDeque.peekLast().getTelemetryValue() <= telemetryValue) {
+            sensorWindow.maxDeque.pollLast();
+        }
+        sensorWindow.maxDeque.addLast(record);
+
+        while (!sensorWindow.minDeque.isEmpty() && sensorWindow.minDeque.peekLast().getTelemetryValue() >= telemetryValue) {
+            sensorWindow.minDeque.pollLast();
+        }
+        sensorWindow.minDeque.addLast(record);
 
         // Remove records that are outside the 5-second window
         evictOldRecords(telemetryId);
@@ -77,22 +102,22 @@ public class TelemetryWindow {
      */
     public String query(TelemetryId telemetryId) {
 
-        ArrayDeque<TelemetryRecord> sensorRecords = telemetryMap.get(telemetryId);
+        SensorWindow sensorWindow = telemetryMap.get(telemetryId);
         
-        if (sensorRecords == null) {
+        if (sensorWindow == null) {
             return null;
         }
 
         evictOldRecords(telemetryId);
 
-        if (sensorRecords.isEmpty()) {
+        if (sensorWindow.records.isEmpty()) {
             return null;
         }
 
 
-        final float min = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).min(Float::compare).orElse(Float.NaN);
-        final float max = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).max(Float::compare).orElse(Float.NaN);
-        final float mean = sensorRecords.stream().map(TelemetryRecord::getTelemetryValue).reduce(0.0f, Float::sum) / sensorRecords.size();
+        final float min = sensorWindow.minDeque.peekFirst().getTelemetryValue();
+        final float max = sensorWindow.maxDeque.peekFirst().getTelemetryValue();
+        final double mean = sensorWindow.sum / sensorWindow.records.size();
 
         return String.format("Min: %.2f, Max: %.2f, Mean: %.2f", min, max, mean);
     }

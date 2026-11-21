@@ -23,18 +23,19 @@ interview-prep/
 
 | Problem | Language | Topics | Status |
 |---|---|---|---|
-| [Telemetry Anomaly Window](spacex/telemetry/SPACEX-Problem.md) | Java | Sliding window, `HashMap` of `ArrayDeque`s, eviction, monotonic deque | Correct per-sensor windowing with JUnit tests; O(1) min/max in progress |
+| [Telemetry Anomaly Window](spacex/telemetry/SPACEX-Problem.md) | Java | Sliding window, `HashMap` of `ArrayDeque`s, eviction, monotonic deque | Done: O(1) query, amortized O(1) ingest, JUnit tests |
 
 ### Telemetry Anomaly Window
 
 Stream sensor readings `(timestamp_ms, sensor_id, value)` and answer min, max, and mean for any sensor over the last 5,000 ms.
 
-**Approach so far**
-- One `ArrayDeque` per sensor, kept in a `HashMap` keyed by a `TelemetryId` enum.
-- Readings older than the window are evicted from the front of the deque on `ingest`, and lazily on `query` so a sensor that has gone quiet doesn't return stale data.
-- The latest timestamp is tracked as a field instead of being found with a scan.
+**Approach**
+- Each sensor gets a `SensorWindow` holding its readings in an `ArrayDeque`, plus a monotonic max deque, a monotonic min deque, and a running sum.
+- On `ingest`, smaller older values are popped off the back of the max deque (larger ones off the min deque) before the new reading is added, so the front of each is always the current max or min.
+- Readings that age out are evicted from the front on `ingest`, and lazily on `query` so a sensor that has gone quiet returns nothing. Evicting a reading also subtracts it from the sum and removes it from the front of either deque if it's there.
+- `query` reads the two fronts and divides the sum by the count: O(1). Each reading enters and leaves each deque at most once, so `ingest` is amortized O(1).
 
-**Next step:** add a monotonic max-deque and min-deque per sensor plus a running sum, so that `query` is O(1) and `ingest` is amortized O(1).
+**Next step:** solve it again in Python or C++, or try the stretch goal (3-sigma anomaly flagging with Welford's algorithm).
 
 ## Running
 
@@ -45,4 +46,4 @@ cd spacex/telemetry/java
 ./gradlew test
 ```
 
-GitHub Actions runs the same tests on every push. The JUnit suite covers the problem's example, per-sensor windowing with interleaved sensors, a sensor that never reported, a sensor that went quiet while another kept time moving, negative values, and the exact 5,000 ms boundary (a reading exactly 5,000 ms old has aged out).
+GitHub Actions runs the same tests on every push. The JUnit suite covers the problem's example, per-sensor windowing with interleaved sensors, a sensor that never reported, a sensor that went quiet while another kept time moving, negative values, a max or min aging out while smaller or larger values remain, and the exact 5,000 ms boundary (a reading exactly 5,000 ms old has aged out).

@@ -100,4 +100,31 @@ public class TelemetryWindowTest {
         assertEquals("Min: -160.00, Max: -160.00, Mean: -160.00", ch4PStats);
     }
 
+    @Test
+    public void testMaxAgesOutWhileSmallerValuesRemain() {
+        // Values go down and up, so the max is NOT always the newest reading.
+        // This is the case the monotonic deques exist for.
+        telemetryWindow.ingest(0000L, TelemetryWindow.TelemetryId.LOX_P, 9.0f); // the max, evicted at 5500
+        telemetryWindow.ingest(1000L, TelemetryWindow.TelemetryId.LOX_P, 5.0f);
+        telemetryWindow.ingest(2000L, TelemetryWindow.TelemetryId.LOX_P, 7.0f); // becomes the max once 9 leaves
+        telemetryWindow.ingest(3000L, TelemetryWindow.TelemetryId.LOX_P, 3.0f); // the min
+        telemetryWindow.ingest(5500L, TelemetryWindow.TelemetryId.LOX_P, 4.0f);
+
+        String stats = telemetryWindow.query(TelemetryWindow.TelemetryId.LOX_P);
+        assertEquals("Min: 3.00, Max: 7.00, Mean: 4.75", stats);
+    }
+
+    @Test
+    public void testMinAgesOutWhileLargerValuesRemain() {
+        // Mirror image of the max test, for the min deque.
+        telemetryWindow.ingest(0000L, TelemetryWindow.TelemetryId.CH4_T, -9.0f); // the min, evicted at 5500
+        telemetryWindow.ingest(1000L, TelemetryWindow.TelemetryId.CH4_T, -5.0f);
+        telemetryWindow.ingest(2000L, TelemetryWindow.TelemetryId.CH4_T, -7.0f); // becomes the min once -9 leaves
+        telemetryWindow.ingest(3000L, TelemetryWindow.TelemetryId.CH4_T, -3.0f); // the max
+        telemetryWindow.ingest(5500L, TelemetryWindow.TelemetryId.CH4_T, -4.0f);
+
+        String stats = telemetryWindow.query(TelemetryWindow.TelemetryId.CH4_T);
+        assertEquals("Min: -7.00, Max: -3.00, Mean: -4.75", stats);
+    }
+
 }
